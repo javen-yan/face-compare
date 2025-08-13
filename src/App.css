@@ -1,0 +1,97 @@
+/* 主应用样式 */
+.App {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* 头部样式 */
+.App-header {
+  text-align: center;
+  padding: 40px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  margin-bottom: 30px;
+}
+
+.App-header h1 {
+  margin: 0 0 15px 0;
+  font-size: 36px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.App-header p {
+  margin: 0;
+  font-size: 18px;
+  opacity: 0.9;
+}
+
+/* 主内容区域 */
+.main-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  margin-bottom: 40px;
+}
+
+/* 全局结果显示 */
+.global-result {
+  max-width: 800px;
+  margin: 0 auto 40px;
+  padding: 25px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #28a745;
+}
+
+.global-result h3 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 22px;
+  text-align: center;
+}
+
+.result-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.result-item span:first-child {
+  font-weight: 600;
+  color: #495057;
+}
+
+.similarity.match {
+  color: #28a745;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.similarity.no-match {
+  color: #dc3545;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.match {
+  color: #28a745;
+  font-weight: 600;
+}
+
+.no-match {
+  color: #dc3545;
+  font-weight: 600;
+}

@@ -29,14 +29,13 @@ export type {
 } from './hooks/useFaceCompare';
 
 // 导出 React 组件
-export { default as FaceCompareComponent } from './components/FaceCompareComponent';
+export { InsightFaceComponent } from './components/InsightFaceComponent';
 export { default as CameraModal } from './components/CameraModal';
 
 // 导出组件的类型
 export type {
-  FaceCompareComponentProps,
-  FaceCompareComponentTheme
-} from './components/FaceCompareComponent';
+  InsightFaceComponentProps
+} from './components/InsightFaceComponent';
 
 export type {
   CameraModalConfig as CameraModalConfigType,

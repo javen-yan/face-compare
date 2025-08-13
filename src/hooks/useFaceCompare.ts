@@ -1,6 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { FaceCompare, FaceCompareOptions, FaceCompareEvents } from '../FaceCompare';
-import { FaceCompareConfig, FaceCompareResult, FaceInitResponse } from '../types';
+import { 
+  FaceCompareConfig, 
+  FaceCompareResult, 
+  FaceInitResponse,
+  UsersListResponse,
+  SystemInfoResponse
+} from '../types';
 
 export interface UseFaceCompareOptions extends FaceCompareOptions {
   autoRetry?: boolean;
@@ -19,12 +25,15 @@ export interface UseFaceCompareState {
     hasFaceData: boolean;
     apiEndpoint: string;
     options: Required<FaceCompareOptions>;
+    insightFaceConfig: any;
   };
   progress: {
     current: number;
     total: number;
     percentage: number;
   };
+  systemInfo: any;
+  usersList: any[];
 }
 
 export const useFaceCompare = (
@@ -46,14 +55,18 @@ export const useFaceCompare = (
         timeout: 30000,
         retryCount: 3,
         retryDelay: 1000,
-        enableLogging: false
-      }
+        enableLogging: false,
+        insightFace: {}
+      },
+      insightFaceConfig: {}
     },
     progress: {
       current: 0,
       total: 0,
       percentage: 0
-    }
+    },
+    systemInfo: null,
+    usersList: []
   });
 
   const sdkRef = useRef<FaceCompare | null>(null);
@@ -105,6 +118,27 @@ export const useFaceCompare = (
           error: error.message 
         }));
         events?.onCompareError?.(error);
+      },
+      onBatchCompareStart: () => {
+        setState(prev => ({ ...prev, isLoading: true, error: null }));
+        events?.onBatchCompareStart?.();
+      },
+      onBatchCompareSuccess: (results) => {
+        setState(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          result: results[0] || null,
+          progress: { current: results.length, total: results.length, percentage: 100 }
+        }));
+        events?.onBatchCompareSuccess?.(results);
+      },
+      onBatchCompareError: (error) => {
+        setState(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          error: error.message 
+        }));
+        events?.onBatchCompareError?.(error);
       },
       onError: (error) => {
         setState(prev => ({ ...prev, error: error.message }));
@@ -161,7 +195,7 @@ export const useFaceCompare = (
     }
   }, [options?.autoRetry, options?.maxRetries, options?.retryDelay]);
 
-  const init = useCallback(async (imageData: string): Promise<FaceInitResponse> => {
+  const init = useCallback(async (imageData: string, userId?: string): Promise<FaceInitResponse> => {
     if (!sdkRef.current) {
       throw new Error('SDK 未初始化');
     }
@@ -174,12 +208,12 @@ export const useFaceCompare = (
     }
 
     return retryOperation(async () => {
-      const response = await sdkRef.current!.init(imageData);
+      const response = await sdkRef.current!.init(imageData, userId);
       return response;
     });
   }, [retryOperation]);
 
-  const compare = useCallback(async (imageData: string): Promise<FaceCompareResult> => {
+  const compare = useCallback(async (imageData: string, threshold?: number): Promise<FaceCompareResult> => {
     if (!sdkRef.current) {
       throw new Error('SDK 未初始化');
     }
@@ -196,12 +230,12 @@ export const useFaceCompare = (
     }
 
     return retryOperation(async () => {
-      const result = await sdkRef.current!.compare(imageData);
+      const result = await sdkRef.current!.compare(imageData, threshold);
       return result;
     });
   }, [retryOperation]);
 
-  const compareBatch = useCallback(async (imageDataList: string[]): Promise<FaceCompareResult[]> => {
+  const compareBatch = useCallback(async (imageDataList: string[], threshold?: number): Promise<FaceCompareResult[]> => {
     if (!sdkRef.current) {
       throw new Error('SDK 未初始化');
     }
@@ -225,29 +259,14 @@ export const useFaceCompare = (
     }));
 
     try {
-      const results: FaceCompareResult[] = [];
+      // 使用 InsightFace 的批量对比功能
+      const results = await sdkRef.current!.compareBatch(imageDataList, threshold);
       
-      for (let i = 0; i < imageDataList.length; i++) {
-        try {
-          const result = await sdkRef.current!.compare(imageDataList[i]);
-          results.push(result);
-          
-          // 更新进度
-          const current = i + 1;
-          const percentage = Math.round((current / imageDataList.length) * 100);
-          setState(prev => ({ 
-            ...prev, 
-            progress: { current, total: imageDataList.length, percentage }
-          }));
-        } catch (error) {
-          console.error(`第 ${i + 1} 张图片对比失败:`, error);
-        }
-      }
-
       setState(prev => ({ 
         ...prev, 
         isLoading: false,
-        result: results[0] || null // 显示第一个结果
+        result: results[0] || null,
+        progress: { current: results.length, total: imageDataList.length, percentage: 100 }
       }));
 
       return results;
@@ -257,6 +276,102 @@ export const useFaceCompare = (
         isLoading: false,
         error: error instanceof Error ? error.message : '批量对比失败'
       }));
+      throw error;
+    }
+  }, []);
+
+  // InsightFace 新功能：获取用户列表
+  const getUsersList = useCallback(async (): Promise<UsersListResponse> => {
+    if (!sdkRef.current) {
+      throw new Error('SDK 未初始化');
+    }
+
+    try {
+      const response = await sdkRef.current.getUsersList();
+      setState(prev => ({ ...prev, usersList: response.data?.users || [] }));
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '获取用户列表失败';
+      setState(prev => ({ ...prev, error: errorMessage }));
+      throw error;
+    }
+  }, []);
+
+  // InsightFace 新功能：获取用户信息
+  const getUserInfo = useCallback(async (userId: string): Promise<any> => {
+    if (!sdkRef.current) {
+      throw new Error('SDK 未初始化');
+    }
+
+    try {
+      const response = await sdkRef.current.getUserInfo(userId);
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '获取用户信息失败';
+      setState(prev => ({ ...prev, error: errorMessage }));
+      throw error;
+    }
+  }, []);
+
+  // InsightFace 新功能：删除用户
+  const deleteUser = useCallback(async (userId: string): Promise<any> => {
+    if (!sdkRef.current) {
+      throw new Error('SDK 未初始化');
+    }
+
+    try {
+      const response = await sdkRef.current.deleteUser(userId);
+      
+      // 如果删除的是当前用户，清除状态
+      if (userId === state.status.userId) {
+        setState(prev => ({ 
+          ...prev, 
+          isInitialized: false,
+          result: null,
+          status: sdkRef.current!.getStatus()
+        }));
+      }
+      
+      // 刷新用户列表
+      await getUsersList();
+      
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '删除用户失败';
+      setState(prev => ({ ...prev, error: errorMessage }));
+      throw error;
+    }
+  }, [state.status.userId, getUsersList]);
+
+  // InsightFace 新功能：获取系统信息
+  const getSystemInfo = useCallback(async (): Promise<SystemInfoResponse> => {
+    if (!sdkRef.current) {
+      throw new Error('SDK 未初始化');
+    }
+
+    try {
+      const response = await sdkRef.current.getSystemInfo();
+      setState(prev => ({ ...prev, systemInfo: response.data }));
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '获取系统信息失败';
+      setState(prev => ({ ...prev, error: errorMessage }));
+      throw error;
+    }
+  }, []);
+
+  // InsightFace 新功能：健康检查
+  const healthCheck = useCallback(async (): Promise<any> => {
+    if (!sdkRef.current) {
+      throw new Error('SDK 未初始化');
+    }
+
+    try {
+      const response = await sdkRef.current.healthCheck();
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '健康检查失败';
+      setState(prev => ({ ...prev, error: errorMessage }));
       throw error;
     }
   }, []);
@@ -294,7 +409,7 @@ export const useFaceCompare = (
     }
   }, []);
 
-  const updateOptions = useCallback((newOptions: Partial<FaceCompareOptions>) => {
+  const updateOptions = useCallback((newOptions: Partial<UseFaceCompareOptions>) => {
     if (sdkRef.current) {
       sdkRef.current.updateOptions(newOptions);
       setState(prev => ({ 
@@ -319,12 +434,19 @@ export const useFaceCompare = (
     // 状态
     ...state,
     
-    // 操作方法
+    // 基础操作方法
     init,
     compare,
     compareBatch,
     clear,
     reset,
+    
+    // InsightFace 新功能
+    getUsersList,
+    getUserInfo,
+    deleteUser,
+    getSystemInfo,
+    healthCheck,
     
     // 配置方法
     updateConfig,

@@ -1,10 +1,20 @@
-import { FaceCompareConfig, FaceInitResponse, FaceCompareResponse, FaceCompareResult } from './types';
+import { 
+  FaceCompareConfig, 
+  FaceInitResponse, 
+  FaceCompareResponse, 
+  FaceCompareResult,
+  FaceCompareBatchResponse,
+  UsersListResponse,
+  SystemInfoResponse,
+  InsightFaceConfig
+} from './types';
 
 export interface FaceCompareOptions {
   timeout?: number;
   retryCount?: number;
   retryDelay?: number;
   enableLogging?: boolean;
+  insightFace?: InsightFaceConfig; // InsightFace 特定配置
 }
 
 export interface FaceCompareEvents {
@@ -14,16 +24,20 @@ export interface FaceCompareEvents {
   onCompareStart?: () => void;
   onCompareSuccess?: (result: FaceCompareResult) => void;
   onCompareError?: (error: Error) => void;
+  onBatchCompareStart?: () => void;
+  onBatchCompareSuccess?: (results: FaceCompareResult[]) => void;
+  onBatchCompareError?: (error: Error) => void;
   onError?: (error: Error) => void;
 }
 
 export class FaceCompare {
   private api: string;
-  private auth: string;
+  private auth?: string;
   private userId?: string;
   private faceData?: string;
   private options: Required<FaceCompareOptions>;
   private events: FaceCompareEvents;
+  private insightFaceConfig: InsightFaceConfig;
 
   constructor(config: FaceCompareConfig, options?: FaceCompareOptions, events?: FaceCompareEvents) {
     this.api = config.api;
@@ -35,30 +49,50 @@ export class FaceCompare {
       retryCount: 3,
       retryDelay: 1000,
       enableLogging: false,
+      insightFace: {},
       ...options
     };
 
-    this.log('FaceCompare 实例已创建', { api: this.api, options: this.options });
+    this.insightFaceConfig = {
+      threshold: 0.6,
+      enableBatchCompare: true,
+      enableUserManagement: true,
+      enableSystemMonitoring: true,
+      ...this.options.insightFace
+    };
+
+    this.log('FaceCompare 实例已创建', { 
+      api: this.api, 
+      options: this.options,
+      insightFace: this.insightFaceConfig
+    });
   }
 
   /**
    * 初始化用户人脸数据
    * @param imageData 图片数据（base64格式）
+   * @param userId 可选的用户ID，不提供则自动生成
    * @returns Promise<FaceInitResponse>
    */
-  async init(imageData: string): Promise<FaceInitResponse> {
+  async init(imageData: string, userId?: string): Promise<FaceInitResponse> {
     this.events.onInitStart?.();
     this.log('开始初始化人脸数据');
 
     try {
-      const response = await this.makeRequest('/face-init', {
-        imageData: imageData
-      }, 'init');
+      const requestData: any = { imageData };
+      if (userId) {
+        requestData.userId = userId;
+      }
+
+      const response = await this.makeRequest('/face-init', requestData, 'init');
       
       if (response.success && response.data) {
         this.userId = response.data.userId;
         this.faceData = response.data.faceData;
-        this.log('人脸数据初始化成功', { userId: this.userId });
+        this.log('人脸数据初始化成功', { 
+          userId: this.userId, 
+          faceCount: response.data.faceCount 
+        });
         this.events.onInitSuccess?.(response);
       } else {
         const error = new Error(response.message || '初始化失败');
@@ -80,9 +114,10 @@ export class FaceCompare {
   /**
    * 对比人脸图片
    * @param imageData 待对比的图片数据（base64格式）
+   * @param threshold 可选的相似度阈值
    * @returns Promise<FaceCompareResult>
    */
-  async compare(imageData: string): Promise<FaceCompareResult> {
+  async compare(imageData: string, threshold?: number): Promise<FaceCompareResult> {
     if (!this.isInitialized()) {
       const error = new Error('请先初始化人脸数据');
       this.events.onError?.(error);
@@ -93,16 +128,25 @@ export class FaceCompare {
     this.log('开始人脸对比');
 
     try {
-      const response = await this.makeRequest('/face-compare', {
+      const requestData: any = {
         imageData: imageData,
         userId: this.userId
-      }, 'compare');
+      };
+
+      // 使用配置的阈值或传入的阈值
+      const finalThreshold = threshold ?? this.insightFaceConfig.threshold;
+      if (finalThreshold !== undefined) {
+        requestData.threshold = finalThreshold;
+      }
+
+      const response = await this.makeRequest('/face-compare', requestData, 'compare');
       
       if (response.success && response.data) {
         const result = {
           similarity: response.data.similarity,
           isMatch: response.data.isMatch,
-          confidence: response.data.confidence
+          confidence: response.data.confidence,
+          threshold: response.data.threshold
         };
         
         this.log('人脸对比成功', result);
@@ -124,25 +168,84 @@ export class FaceCompare {
   }
 
   /**
-   * 批量对比多张图片
+   * 批量对比多张图片（InsightFace 新功能）
    * @param imageDataList 图片数据列表
+   * @param threshold 可选的相似度阈值
    * @returns Promise<FaceCompareResult[]>
    */
-  async compareBatch(imageDataList: string[]): Promise<FaceCompareResult[]> {
+  async compareBatch(imageDataList: string[], threshold?: number): Promise<FaceCompareResult[]> {
     if (!this.isInitialized()) {
       const error = new Error('请先初始化人脸数据');
       this.events.onError?.(error);
       throw error;
     }
 
+    if (!this.insightFaceConfig.enableBatchCompare) {
+      // 如果不支持批量对比，回退到逐个对比
+      this.log('批量对比未启用，使用逐个对比模式');
+      return this.compareBatchFallback(imageDataList, threshold);
+    }
+
+    this.events.onBatchCompareStart?.();
     this.log('开始批量人脸对比', { count: imageDataList.length });
+
+    try {
+      const requestData: any = {
+        imageDataList: imageDataList,
+        userId: this.userId
+      };
+
+      const finalThreshold = threshold ?? this.insightFaceConfig.threshold;
+      if (finalThreshold !== undefined) {
+        requestData.threshold = finalThreshold;
+      }
+
+      const response = await this.makeRequest('/face-compare-batch', requestData, 'batch-compare');
+      
+      if (response.success && response.data) {
+        const results = response.data.results.map(item => ({
+          similarity: item.similarity,
+          isMatch: item.isMatch,
+          confidence: item.confidence,
+          threshold: item.threshold
+        }));
+        
+        this.log('批量对比成功', { 
+          total: response.data.total,
+          success: response.data.successCount,
+          failed: response.data.errorCount
+        });
+        
+        this.events.onBatchCompareSuccess?.(results);
+        return results;
+      } else {
+        const error = new Error(response.message || '批量对比失败');
+        this.events.onBatchCompareError?.(error);
+        this.events.onError?.(error);
+        throw error;
+      }
+    } catch (error) {
+      const errorObj = error instanceof Error ? error : new Error('未知错误');
+      this.log('批量对比失败', { error: errorObj.message });
+      this.events.onBatchCompareError?.(errorObj);
+      this.events.onError?.(errorObj);
+      throw errorObj;
+    }
+  }
+
+  /**
+   * 批量对比的回退实现（逐个对比）
+   * @private
+   */
+  private async compareBatchFallback(imageDataList: string[], threshold?: number): Promise<FaceCompareResult[]> {
+    this.log('使用逐个对比模式', { count: imageDataList.length });
 
     const results: FaceCompareResult[] = [];
     const errors: Error[] = [];
 
     for (let i = 0; i < imageDataList.length; i++) {
       try {
-        const result = await this.compare(imageDataList[i]);
+        const result = await this.compare(imageDataList[i], threshold);
         results.push(result);
       } catch (error) {
         const errorObj = error instanceof Error ? error : new Error('未知错误');
@@ -152,16 +255,109 @@ export class FaceCompare {
     }
 
     if (errors.length > 0) {
-      this.log('批量对比完成，部分失败', { 
+      this.log('逐个对比完成，部分失败', { 
         total: imageDataList.length, 
         success: results.length, 
         failed: errors.length 
       });
     } else {
-      this.log('批量对比全部成功', { count: results.length });
+      this.log('逐个对比全部成功', { count: results.length });
     }
 
     return results;
+  }
+
+  /**
+   * 获取所有用户列表（InsightFace 新功能）
+   * @returns Promise<UsersListResponse>
+   */
+  async getUsersList(): Promise<UsersListResponse> {
+    if (!this.insightFaceConfig.enableUserManagement) {
+      throw new Error('用户管理功能未启用');
+    }
+
+    try {
+      const response = await this.makeRequest('/users', {}, 'get-users');
+      return response;
+    } catch (error) {
+      const errorObj = error instanceof Error ? error : new Error('获取用户列表失败');
+      this.log('获取用户列表失败', { error: errorObj.message });
+      throw errorObj;
+    }
+  }
+
+  /**
+   * 获取用户信息（InsightFace 新功能）
+   * @param userId 用户ID
+   * @returns Promise<any>
+   */
+  async getUserInfo(userId: string): Promise<any> {
+    if (!this.insightFaceConfig.enableUserManagement) {
+      throw new Error('用户管理功能未启用');
+    }
+
+    try {
+      const response = await this.makeRequest(`/users/${userId}`, {}, 'get-user-info');
+      return response;
+    } catch (error) {
+      const errorObj = error instanceof Error ? error : new Error('获取用户信息失败');
+      this.log('获取用户信息失败', { error: errorObj.message });
+      throw errorObj;
+    }
+  }
+
+  /**
+   * 删除用户（InsightFace 新功能）
+   * @param userId 用户ID
+   * @returns Promise<any>
+   */
+  async deleteUser(userId: string): Promise<any> {
+    if (!this.insightFaceConfig.enableUserManagement) {
+      throw new Error('用户管理功能未启用');
+    }
+
+    try {
+      const response = await this.makeRequest(`/users/${userId}`, {}, 'delete-user', 'DELETE');
+      return response;
+    } catch (error) {
+      const errorObj = error instanceof Error ? error : new Error('删除用户失败');
+      this.log('删除用户失败', { error: errorObj.message });
+      throw errorObj;
+    }
+  }
+
+  /**
+   * 获取系统信息（InsightFace 新功能）
+   * @returns Promise<SystemInfoResponse>
+   */
+  async getSystemInfo(): Promise<SystemInfoResponse> {
+    if (!this.insightFaceConfig.enableSystemMonitoring) {
+      throw new Error('系统监控功能未启用');
+    }
+
+    try {
+      const response = await this.makeRequest('/system-info', {}, 'get-system-info');
+      return response;
+    } catch (error) {
+      const errorObj = error instanceof Error ? error : new Error('获取系统信息失败');
+      this.log('获取系统信息失败', { error: errorObj.message });
+      throw errorObj;
+    }
+  }
+
+  /**
+   * 健康检查（InsightFace 新功能）
+   * @returns Promise<any>
+   */
+  async healthCheck(): Promise<any> {
+    try {
+      const response = await this.makeRequest('/health', {}, 'health-check');
+      return response;
+    } catch (error) {
+      const errorObj = error instanceof Error ? error : new Error('健康检查失败');
+      this.log('健康检查失败', { error: errorObj.message });
+      throw errorObj;
+    }
   }
 
   /**
@@ -221,7 +417,8 @@ export class FaceCompare {
       userId: this.userId,
       hasFaceData: !!this.faceData,
       apiEndpoint: this.api,
-      options: this.options
+      options: this.options,
+      insightFaceConfig: this.insightFaceConfig
     };
   }
 
@@ -242,7 +439,7 @@ export class FaceCompare {
     if (newConfig.api) {
       this.api = newConfig.api;
     }
-    if (newConfig.auth) {
+    if (newConfig.auth !== undefined) {
       this.auth = newConfig.auth;
     }
     this.log('配置已更新', newConfig);
@@ -254,6 +451,12 @@ export class FaceCompare {
    */
   updateOptions(newOptions: Partial<FaceCompareOptions>): void {
     this.options = { ...this.options, ...newOptions };
+    
+    // 更新 InsightFace 配置
+    if (newOptions.insightFace) {
+      this.insightFaceConfig = { ...this.insightFaceConfig, ...newOptions.insightFace };
+    }
+    
     this.log('选项已更新', newOptions);
   }
 
@@ -273,22 +476,36 @@ export class FaceCompare {
   private async makeRequest(
     endpoint: string, 
     data: any, 
-    operation: 'init' | 'compare'
+    operation: 'init' | 'compare' | 'batch-compare' | 'get-users' | 'get-user-info' | 'delete-user' | 'get-system-info' | 'health-check',
+    method: 'GET' | 'POST' | 'DELETE' = 'POST'
   ): Promise<any> {
     const url = `${this.api}${endpoint}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.options.timeout);
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
+      const requestOptions: RequestInit = {
+        method: method,
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.auth}`
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify(data),
         signal: controller.signal
-      });
+      };
+
+      // 添加认证头（如果提供）
+      if (this.auth) {
+        requestOptions.headers = {
+          ...requestOptions.headers,
+          'Authorization': `Bearer ${this.auth}`
+        };
+      }
+
+      // 添加请求体（POST 和 DELETE 请求）
+      if (method !== 'GET' && Object.keys(data).length > 0) {
+        requestOptions.body = JSON.stringify(data);
+      }
+
+      const response = await fetch(url, requestOptions);
 
       clearTimeout(timeoutId);
 
