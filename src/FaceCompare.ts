@@ -1,9 +1,8 @@
 import { 
   FaceCompareConfig, 
   FaceInitResponse, 
-  FaceCompareResponse, 
   FaceCompareResult,
-  FaceCompareBatchResponse,
+  FaceCompareBatchResultItem,
   UsersListResponse,
   SystemInfoResponse,
   InsightFaceConfig
@@ -84,7 +83,7 @@ export class FaceCompare {
         requestData.userId = userId;
       }
 
-      const response = await this.makeRequest('/face-init', requestData, 'init');
+      const response = await this.makeRequest('/face-init', requestData);
       
       if (response.success && response.data) {
         this.userId = response.data.userId;
@@ -139,7 +138,7 @@ export class FaceCompare {
         requestData.threshold = finalThreshold;
       }
 
-      const response = await this.makeRequest('/face-compare', requestData, 'compare');
+      const response = await this.makeRequest('/face-compare', requestData);
       
       if (response.success && response.data) {
         const result = {
@@ -200,10 +199,10 @@ export class FaceCompare {
         requestData.threshold = finalThreshold;
       }
 
-      const response = await this.makeRequest('/face-compare-batch', requestData, 'batch-compare');
+      const response = await this.makeRequest('/face-compare-batch', requestData);
       
       if (response.success && response.data) {
-        const results = response.data.results.map(item => ({
+        const results = response.data.results.map((item: FaceCompareBatchResultItem) => ({
           similarity: item.similarity,
           isMatch: item.isMatch,
           confidence: item.confidence,
@@ -277,7 +276,7 @@ export class FaceCompare {
     }
 
     try {
-      const response = await this.makeRequest('/users', {}, 'get-users');
+      const response = await this.makeRequest('/users', {});
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('获取用户列表失败');
@@ -297,7 +296,7 @@ export class FaceCompare {
     }
 
     try {
-      const response = await this.makeRequest(`/users/${userId}`, {}, 'get-user-info');
+      const response = await this.makeRequest(`/users/${userId}`, {});
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('获取用户信息失败');
@@ -317,7 +316,7 @@ export class FaceCompare {
     }
 
     try {
-      const response = await this.makeRequest(`/users/${userId}`, {}, 'delete-user', 'DELETE');
+      const response = await this.makeRequest(`/users/${userId}`, {}, 'DELETE');
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('删除用户失败');
@@ -336,7 +335,7 @@ export class FaceCompare {
     }
 
     try {
-      const response = await this.makeRequest('/system-info', {}, 'get-system-info');
+      const response = await this.makeRequest('/system-info', {});
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('获取系统信息失败');
@@ -351,7 +350,7 @@ export class FaceCompare {
    */
   async healthCheck(): Promise<any> {
     try {
-      const response = await this.makeRequest('/health', {}, 'health-check');
+      const response = await this.makeRequest('/health', {});
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('健康检查失败');
@@ -476,7 +475,6 @@ export class FaceCompare {
   private async makeRequest(
     endpoint: string, 
     data: any, 
-    operation: 'init' | 'compare' | 'batch-compare' | 'get-users' | 'get-user-info' | 'delete-user' | 'get-system-info' | 'health-check',
     method: 'GET' | 'POST' | 'DELETE' = 'POST'
   ): Promise<any> {
     const url = `${this.api}${endpoint}`;

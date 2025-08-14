@@ -13,32 +13,34 @@ export interface FaceInitResponse {
   };
 }   
 
+export interface FaceCompareResult {
+  similarity: number;
+  isMatch: boolean;
+  confidence: number;
+  threshold?: number;
+}
+
+export interface FaceCompareBatchResultItem extends FaceCompareResult {
+  index: number;
+}
+
+export interface FaceCompareBatchErrorItem {
+  index: number;
+  error: string;
+}
+
 export interface FaceCompareResponse {
   success: boolean;
   message: string;
-  data?: {
-    similarity: number;
-    isMatch: boolean;
-    confidence: number;
-    threshold?: number;
-  };
+  data?: FaceCompareResult;
 }
 
 export interface FaceCompareBatchResponse {
   success: boolean;
   message: string;
   data?: {
-    results: Array<{
-      index: number;
-      similarity: number;
-      isMatch: boolean;
-      confidence: number;
-      threshold?: number;
-    }>;
-    errors: Array<{
-      index: number;
-      error: string;
-    }>;
+    results: FaceCompareBatchResultItem[];
+    errors: FaceCompareBatchErrorItem[];
     total: number;
     successCount: number;
     errorCount: number;
@@ -115,17 +117,9 @@ export interface CameraModalConfig {
   maxFileSize?: number;
 }
 
-export interface FaceCompareResult {
-  similarity: number;
-  isMatch: boolean;
-  confidence: number;
-  threshold?: number;
-}
-
-// InsightFace 特定的配置选项
 export interface InsightFaceConfig {
-  threshold?: number; // 相似度阈值，默认 0.6
-  enableBatchCompare?: boolean; // 是否启用批量对比
-  enableUserManagement?: boolean; // 是否启用用户管理
-  enableSystemMonitoring?: boolean; // 是否启用系统监控
+  threshold?: number;
+  enableBatchCompare?: boolean;
+  enableUserManagement?: boolean;
+  enableSystemMonitoring?: boolean;
 }

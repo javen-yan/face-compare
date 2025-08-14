@@ -1,0 +1,29 @@
+# 源代码（只发布编译后的文件）
+src/
+examples/
+insightface-server/
+
+# 开发工具
+.vscode/
+.idea/
+*.log
+
+# 构建工具
+vite.config.ts
+rollup.config.js
+tsconfig.json
+tsconfig.node.json
+
+# 开发依赖
+node_modules/
+.git/
+.gitignore
+
+# 启动脚本
+start-insightface.*
+*.bat
+*.sh
+
+# 其他
+*.md
+!README.md
