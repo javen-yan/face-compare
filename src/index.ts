@@ -10,7 +10,6 @@ export type {
   FaceCompareBatchResponse,
   FaceCompareBatchResultItem,
   FaceCompareBatchErrorItem,
-  UsersListResponse,
   SystemInfoResponse,
   InsightFaceConfig,
   CameraModalProps,
@@ -25,20 +24,20 @@ export type {
 
 // 导出 React 组件
 export { default as CameraModal } from './components/CameraModal';
-export { InsightFaceComponent } from './components/InsightFaceComponent';
 
 // 导出 React Hook
 export { useFaceCompare } from './hooks/useFaceCompare';
-
-// 导出组件的类型
-export type {
-  InsightFaceComponentProps
-} from './components/InsightFaceComponent';
+export { useAutoFaceCompare } from './hooks/useAutoFaceCompare';
 
 export type {
   UseFaceCompareOptions,
   UseFaceCompareState
 } from './hooks/useFaceCompare';
+
+export type {
+  UseAutoFaceCompareOptions,
+  UseAutoFaceCompareReturn
+} from './hooks/useAutoFaceCompare';
 
 // 默认导出核心类
 export { FaceCompare as default } from './FaceCompare';

@@ -3,9 +3,9 @@ import {
   FaceInitResponse, 
   FaceCompareResult,
   FaceCompareBatchResultItem,
-  UsersListResponse,
   SystemInfoResponse,
-  InsightFaceConfig
+  InsightFaceConfig,
+  UserInfo
 } from './types';
 
 export interface FaceCompareOptions {
@@ -13,7 +13,7 @@ export interface FaceCompareOptions {
   retryCount?: number;
   retryDelay?: number;
   enableLogging?: boolean;
-  insightFace?: InsightFaceConfig; // InsightFace 特定配置
+  insightFace?: InsightFaceConfig;
 }
 
 export interface FaceCompareEvents {
@@ -42,6 +42,7 @@ export class FaceCompare {
     this.api = config.api;
     this.auth = config.auth;
     this.events = events || {};
+    this.userId = config.userId;
     
     this.options = {
       timeout: 30000,
@@ -68,22 +69,21 @@ export class FaceCompare {
   }
 
   /**
-   * 初始化用户人脸数据
+   * 记录用户人脸数据
    * @param imageData 图片数据（base64格式）
-   * @param userId 可选的用户ID，不提供则自动生成
    * @returns Promise<FaceInitResponse>
    */
-  async init(imageData: string, userId?: string): Promise<FaceInitResponse> {
+  async record(imageData: string): Promise<FaceInitResponse> {
     this.events.onInitStart?.();
     this.log('开始初始化人脸数据');
 
     try {
       const requestData: any = { imageData };
-      if (userId) {
-        requestData.userId = userId;
+      if (this.userId) {
+        requestData.userId = this.userId;
       }
 
-      const response = await this.makeRequest('/face-init', requestData);
+      const response = await this.makeRequest('/api/face-init', requestData);
       
       if (response.success && response.data) {
         this.userId = response.data.userId;
@@ -138,7 +138,7 @@ export class FaceCompare {
         requestData.threshold = finalThreshold;
       }
 
-      const response = await this.makeRequest('/face-compare', requestData);
+      const response = await this.makeRequest('/api/face-compare', requestData);
       
       if (response.success && response.data) {
         const result = {
@@ -199,7 +199,7 @@ export class FaceCompare {
         requestData.threshold = finalThreshold;
       }
 
-      const response = await this.makeRequest('/face-compare-batch', requestData);
+      const response = await this.makeRequest('/api/face-compare-batch', requestData);
       
       if (response.success && response.data) {
         const results = response.data.results.map((item: FaceCompareBatchResultItem) => ({
@@ -267,60 +267,20 @@ export class FaceCompare {
   }
 
   /**
-   * 获取所有用户列表（InsightFace 新功能）
-   * @returns Promise<UsersListResponse>
-   */
-  async getUsersList(): Promise<UsersListResponse> {
-    if (!this.insightFaceConfig.enableUserManagement) {
-      throw new Error('用户管理功能未启用');
-    }
-
-    try {
-      const response = await this.makeRequest('/users', {});
-      return response;
-    } catch (error) {
-      const errorObj = error instanceof Error ? error : new Error('获取用户列表失败');
-      this.log('获取用户列表失败', { error: errorObj.message });
-      throw errorObj;
-    }
-  }
-
-  /**
    * 获取用户信息（InsightFace 新功能）
-   * @param userId 用户ID
-   * @returns Promise<any>
+   * @returns Promise<UserInfo>
    */
-  async getUserInfo(userId: string): Promise<any> {
+  async getUserInfo(): Promise<UserInfo> {
     if (!this.insightFaceConfig.enableUserManagement) {
       throw new Error('用户管理功能未启用');
     }
 
     try {
-      const response = await this.makeRequest(`/users/${userId}`, {});
+      const response = await this.makeRequest(`/api/users/${this.userId}`, {}, 'GET');
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('获取用户信息失败');
       this.log('获取用户信息失败', { error: errorObj.message });
-      throw errorObj;
-    }
-  }
-
-  /**
-   * 删除用户（InsightFace 新功能）
-   * @param userId 用户ID
-   * @returns Promise<any>
-   */
-  async deleteUser(userId: string): Promise<any> {
-    if (!this.insightFaceConfig.enableUserManagement) {
-      throw new Error('用户管理功能未启用');
-    }
-
-    try {
-      const response = await this.makeRequest(`/users/${userId}`, {}, 'DELETE');
-      return response;
-    } catch (error) {
-      const errorObj = error instanceof Error ? error : new Error('删除用户失败');
-      this.log('删除用户失败', { error: errorObj.message });
       throw errorObj;
     }
   }
@@ -335,7 +295,7 @@ export class FaceCompare {
     }
 
     try {
-      const response = await this.makeRequest('/system-info', {});
+      const response = await this.makeRequest('/', {}, 'GET');
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('获取系统信息失败');
@@ -350,7 +310,7 @@ export class FaceCompare {
    */
   async healthCheck(): Promise<any> {
     try {
-      const response = await this.makeRequest('/health', {});
+      const response = await this.makeRequest('/health', {}, 'GET');
       return response;
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('健康检查失败');

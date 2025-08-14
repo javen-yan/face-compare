@@ -4,7 +4,6 @@ import {
   FaceCompareConfig, 
   FaceCompareResult, 
   FaceInitResponse,
-  UsersListResponse,
   SystemInfoResponse
 } from '../types';
 
@@ -33,7 +32,6 @@ export interface UseFaceCompareState {
     percentage: number;
   };
   systemInfo: any;
-  usersList: any[];
 }
 
 export const useFaceCompare = (
@@ -66,7 +64,6 @@ export const useFaceCompare = (
       percentage: 0
     },
     systemInfo: null,
-    usersList: []
   });
 
   const sdkRef = useRef<FaceCompare | null>(null);
@@ -195,7 +192,7 @@ export const useFaceCompare = (
     }
   }, [options?.autoRetry, options?.maxRetries, options?.retryDelay]);
 
-  const init = useCallback(async (imageData: string, userId?: string): Promise<FaceInitResponse> => {
+  const record = useCallback(async (imageData: string): Promise<FaceInitResponse> => {
     if (!sdkRef.current) {
       throw new Error('SDK 未初始化');
     }
@@ -208,7 +205,7 @@ export const useFaceCompare = (
     }
 
     return retryOperation(async () => {
-      const response = await sdkRef.current!.init(imageData, userId);
+      const response = await sdkRef.current!.record(imageData);
       return response;
     });
   }, [retryOperation]);
@@ -280,31 +277,14 @@ export const useFaceCompare = (
     }
   }, []);
 
-  // InsightFace 新功能：获取用户列表
-  const getUsersList = useCallback(async (): Promise<UsersListResponse> => {
-    if (!sdkRef.current) {
-      throw new Error('SDK 未初始化');
-    }
-
-    try {
-      const response = await sdkRef.current.getUsersList();
-      setState(prev => ({ ...prev, usersList: response.data?.users || [] }));
-      return response;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '获取用户列表失败';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      throw error;
-    }
-  }, []);
-
   // InsightFace 新功能：获取用户信息
-  const getUserInfo = useCallback(async (userId: string): Promise<any> => {
+  const getUserInfo = useCallback(async (): Promise<any> => {
     if (!sdkRef.current) {
       throw new Error('SDK 未初始化');
     }
 
     try {
-      const response = await sdkRef.current.getUserInfo(userId);
+      const response = await sdkRef.current.getUserInfo();
       return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '获取用户信息失败';
@@ -312,36 +292,6 @@ export const useFaceCompare = (
       throw error;
     }
   }, []);
-
-  // InsightFace 新功能：删除用户
-  const deleteUser = useCallback(async (userId: string): Promise<any> => {
-    if (!sdkRef.current) {
-      throw new Error('SDK 未初始化');
-    }
-
-    try {
-      const response = await sdkRef.current.deleteUser(userId);
-      
-      // 如果删除的是当前用户，清除状态
-      if (userId === state.status.userId) {
-        setState(prev => ({ 
-          ...prev, 
-          isInitialized: false,
-          result: null,
-          status: sdkRef.current!.getStatus()
-        }));
-      }
-      
-      // 刷新用户列表
-      await getUsersList();
-      
-      return response;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '删除用户失败';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      throw error;
-    }
-  }, [state.status.userId, getUsersList]);
 
   // InsightFace 新功能：获取系统信息
   const getSystemInfo = useCallback(async (): Promise<SystemInfoResponse> => {
@@ -435,16 +385,14 @@ export const useFaceCompare = (
     ...state,
     
     // 基础操作方法
-    init,
+    record,
     compare,
     compareBatch,
     clear,
     reset,
     
     // InsightFace 新功能
-    getUsersList,
     getUserInfo,
-    deleteUser,
     getSystemInfo,
     healthCheck,
     

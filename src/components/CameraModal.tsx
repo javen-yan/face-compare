@@ -191,9 +191,64 @@ const CameraModal: React.FC<CameraModalProps> = ({
     }
   }, [cameraDevices, selectedDevice]);
 
+  // 拍照
+  const capturePhoto = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current || !isCameraReady || isCapturing) {
+      return;
+    }
+
+    setIsCapturing(true);
+    
+    try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        throw new Error('无法获取画布上下文');
+      }
+
+      if (video.videoWidth <= 0 || video.videoHeight <= 0) {
+        throw new Error(`视频尺寸无效: ${video.videoWidth}x${video.videoHeight}`);
+      }
+
+      // 设置画布尺寸
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // 绘制视频帧到画布
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // 生成图片数据
+      const imageData = canvas.toDataURL('image/jpeg', finalConfig.quality);
+      
+      // 检查文件大小
+      const base64Length = imageData.length;
+      const estimatedSizeInMB = (base64Length * 3) / 4 / 1024 / 1024;
+      
+      if (estimatedSizeInMB > finalConfig.maxFileSize) {
+        setError(language.fileSizeError);
+        setIsCapturing(false);
+        return;
+      }
+      
+      setCapturedImage(imageData);
+      setError(null);
+      setFaceDetected(false);
+      onCapture(imageData);
+    } catch (error) {
+      console.error('拍照失败:', error);
+      setError(`拍照失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [finalConfig, language, isCapturing, stream, onCapture]);
+
   // 人脸检测函数
   const detectFace = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current || !isCameraReady) return;
+    if (!videoRef.current || !canvasRef.current || !isCameraReady) {
+      return;
+    }
 
     try {
       const video = videoRef.current;
@@ -244,7 +299,7 @@ const CameraModal: React.FC<CameraModalProps> = ({
     } catch (error) {
       console.error('人脸检测失败:', error);
     }
-  }, [isCameraReady, autoCaptureEnabled, isCapturing, capturedImage]);
+  }, [isCameraReady, autoCaptureEnabled, isCapturing, capturedImage, capturePhoto]);
 
   // 启动人脸检测
   useEffect(() => {
@@ -257,60 +312,6 @@ const CameraModal: React.FC<CameraModalProps> = ({
       };
     }
   }, [isCameraReady, autoCaptureEnabled, detectFace]);
-
-  // 拍照
-  const capturePhoto = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current || !isCameraReady || isCapturing) {
-      return;
-    }
-
-    setIsCapturing(true);
-    
-    try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-
-      if (!context) {
-        throw new Error('无法获取画布上下文');
-      }
-
-      if (video.videoWidth <= 0 || video.videoHeight <= 0) {
-        throw new Error(`视频尺寸无效: ${video.videoWidth}x${video.videoHeight}`);
-      }
-
-      // 设置画布尺寸
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      // 绘制视频帧到画布
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      // 生成图片数据
-      const imageData = canvas.toDataURL('image/jpeg', finalConfig.quality);
-      
-      // 检查文件大小
-      const base64Length = imageData.length;
-      const estimatedSizeInMB = (base64Length * 3) / 4 / 1024 / 1024;
-      
-      if (estimatedSizeInMB > finalConfig.maxFileSize) {
-        setError(language.fileSizeError);
-        setIsCapturing(false);
-        return;
-      }
-      
-      setCapturedImage(imageData);
-      setError(null);
-      // 拍照完成后重置人脸检测状态，避免重复触发
-      setFaceDetected(false);
-      
-    } catch (error) {
-      console.error('拍照失败:', error);
-      setError(`拍照失败: ${error instanceof Error ? error.message : '未知错误'}`);
-    } finally {
-      setIsCapturing(false);
-    }
-  }, [finalConfig, language, isCapturing, stream]);
 
   // 重拍
   const retakePhoto = useCallback(() => {
@@ -335,11 +336,9 @@ const CameraModal: React.FC<CameraModalProps> = ({
 
   // 确认拍照
   const confirmPhoto = useCallback(() => {
-    if (capturedImage) {
-      onCapture(capturedImage);
-      onClose();
-    }
-  }, [capturedImage, onCapture, onClose]);
+    // 拍照完成后已经立即调用了onCapture，这里只需要关闭模态框
+    onClose();
+  }, [onClose]);
 
   // 主要的摄像头管理逻辑
   useEffect(() => {

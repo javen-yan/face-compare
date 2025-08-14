@@ -1,5 +1,6 @@
 export interface FaceCompareConfig {
   api: string;
+  userId: string;
   auth?: string;
 }
 
@@ -51,15 +52,6 @@ export interface UserInfo {
   userId: string;
   createdAt: string;
   imageSize: [number, number, number];
-}
-
-export interface UsersListResponse {
-  success: boolean;
-  message: string;
-  data?: {
-    users: UserInfo[];
-    totalCount: number;
-  };
 }
 
 export interface SystemInfo {
@@ -122,4 +114,66 @@ export interface InsightFaceConfig {
   enableBatchCompare?: boolean;
   enableUserManagement?: boolean;
   enableSystemMonitoring?: boolean;
+}
+
+export interface UseAutoFaceCompareOptions {
+  faceCompareConfig: FaceCompareConfig;
+  faceCompareOptions?: FaceCompareOptions;
+  onCapture?: (imageData: string) => void;
+  onFaceDetected?: (imageData: string) => void;
+  onCompareResult?: (result: any) => void;
+  onError?: (error: Error) => void;
+  autoCloseAfterCapture?: boolean;
+  autoCloseAfterCompare?: boolean;
+  cameraConfig?: {
+    width?: number;
+    height?: number;
+    quality?: number;
+    facingMode?: 'user' | 'environment';
+  };
+}
+
+export interface UseAutoFaceCompareReturn {
+  // 摄像头相关
+  isCameraOpen: boolean;
+  capturedImage: string | null;
+  clearImage: () => void;
+  
+  // 人脸识别相关
+  isInitialized: boolean;
+  isComparing: boolean;
+  compareResult: any;
+  error: Error | null;
+  
+  // 新增：获取初始化状态信息
+  getInitializationInfo: () => {
+    isInitialized: boolean;
+    hasInitializedImage: boolean;
+    initializedImageSize?: number;
+  };
+  
+  // 自动管理的方法
+  record: () => Promise<void>;
+  compare: () => Promise<any>;
+  compareBatch: (imageDataList?: string[]) => Promise<any[]>;
+  
+  // 手动控制
+  openCamera: () => void;
+  closeCamera: () => void;
+  
+  // 模态框属性
+  modalProps: {
+    isOpen: boolean;
+    onClose: () => void;
+    onCapture: (imageData: string) => void;
+    config?: any;
+  };
+}
+
+export interface FaceCompareOptions {
+  timeout?: number;
+  retryCount?: number;
+  retryDelay?: number;
+  enableLogging?: boolean;
+  insightFace?: InsightFaceConfig;
 }
