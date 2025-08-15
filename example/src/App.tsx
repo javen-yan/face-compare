@@ -24,6 +24,10 @@ interface ConfigState {
   language: 'zh-CN' | 'en-US';
   autoCloseAfterCapture: boolean;
   autoCloseAfterCompare: boolean;
+  // 新增配置选项
+  enableCache: boolean;
+  cacheTTL: number;
+  autoRetry: boolean;
 }
 
 function App() {
@@ -49,6 +53,9 @@ function App() {
     language: 'zh-CN',
     autoCloseAfterCapture: false,
     autoCloseAfterCompare: false,
+    enableCache: true,
+    cacheTTL: 300000,
+    autoRetry: true,
   });
 
   const [showSystemInfo, setShowSystemInfo] = useState(false);
@@ -68,7 +75,11 @@ function App() {
     openCamera,
     closeCamera,
     clearImage,
-    modalProps
+    modalProps,
+    // 新增功能
+    clearError,
+    retry,
+    getStatus
   } = useAutoFaceCompare({
     faceCompareConfig: {
       api: config.api,
@@ -80,6 +91,8 @@ function App() {
       retryCount: config.retryCount,
       retryDelay: config.retryDelay,
       enableLogging: config.enableLogging,
+      enableCache: config.enableCache,
+      cacheTTL: config.cacheTTL,
       insightFace: {
         threshold: config.threshold,
         enableUserManagement: config.enableUserManagement,
@@ -96,7 +109,11 @@ function App() {
       height: config.height,
       quality: config.quality,
       facingMode: config.facingMode,
-    }
+    },
+    // 新增配置选项
+    retryCount: config.retryCount,
+    retryDelay: config.retryDelay,
+    enableLogging: config.enableLogging,
   });
 
   const createFaceCompareInstance = () => {
@@ -111,6 +128,8 @@ function App() {
         retryCount: config.retryCount,
         retryDelay: config.retryDelay,
         enableLogging: config.enableLogging,
+        enableCache: config.enableCache,
+        cacheTTL: config.cacheTTL,
         insightFace: {
           threshold: config.threshold,
           enableUserManagement: config.enableUserManagement,
@@ -156,6 +175,24 @@ function App() {
 
   const updateConfig = (key: keyof ConfigState, value: any) => {
     setConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleRetry = async () => {
+    try {
+      await retry();
+    } catch (error) {
+      console.error('重试失败:', error);
+    }
+  };
+
+  const handleClearError = () => {
+    clearError();
+  };
+
+  const handleGetStatus = () => {
+    const status = getStatus();
+    console.log('当前状态:', status);
+    alert('状态信息已输出到控制台');
   };
 
   return (
@@ -345,6 +382,52 @@ function App() {
               />
             </div>
             <div className="config-row">
+              <label>启用缓存:</label>
+              <input
+                type="checkbox"
+                checked={config.enableCache}
+                onChange={(e) => updateConfig('enableCache', e.target.checked)}
+              />
+            </div>
+            <div className="config-row">
+              <label>缓存TTL (ms):</label>
+              <input
+                type="number"
+                value={config.cacheTTL}
+                onChange={(e) => updateConfig('cacheTTL', parseInt(e.target.value))}
+                min="1000"
+                step="1000"
+                disabled={!config.enableCache}
+              />
+            </div>
+            <div className="config-row">
+              <label>自动重试:</label>
+              <input
+                type="checkbox"
+                checked={config.autoRetry}
+                onChange={(e) => updateConfig('autoRetry', e.target.checked)}
+              />
+            </div>
+            <div className="config-row">
+              <label>缓存TTL (ms):</label>
+              <input
+                type="number"
+                value={config.cacheTTL}
+                onChange={(e) => updateConfig('cacheTTL', parseInt(e.target.value))}
+                min="1000"
+                step="1000"
+                disabled={!config.enableCache}
+              />
+            </div>
+            <div className="config-row">
+              <label>自动重试:</label>
+              <input
+                type="checkbox"
+                checked={config.autoRetry}
+                onChange={(e) => updateConfig('autoRetry', e.target.checked)}
+              />
+            </div>
+            <div className="config-row">
               <label>用户管理:</label>
               <input
                 type="checkbox"
@@ -439,6 +522,19 @@ function App() {
               {isComparing ? '对比中...' : '开始人脸对比'}
             </button>
           </div>
+
+          <div className="action-section">
+            <h3>工具方法</h3>
+            <button onClick={handleRetry} className="btn btn-warning" disabled={isComparing}>
+              重试操作
+            </button>
+            <button onClick={handleClearError} className="btn btn-secondary">
+              清除错误
+            </button>
+            <button onClick={handleGetStatus} className="btn btn-info">
+              获取状态
+            </button>
+          </div>
         </div>
 
         <div className="status-panel">
@@ -471,16 +567,36 @@ function App() {
             </div>
           </div>
 
+
+
           {error && (
             <div className="error-display">
               <h3>❌ 错误信息</h3>
-              <pre>{error.message}</pre>
+              <div className="error-header">
+                <span className="error-type">{error.type}</span>
+                <span className="error-timestamp">
+                  {new Date(error.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+              <pre className="error-message">{error.message}</pre>
+              {error.details && (
+                <details>
+                  <summary>错误详情</summary>
+                  <pre>{JSON.stringify(error.details, null, 2)}</pre>
+                </details>
+              )}
             </div>
           )}
 
           {compareResult && (
             <div className="result-display">
               <h3>🎯 对比结果</h3>
+              <div className="result-header">
+                <span className="result-type">{compareResult.type}</span>
+                <span className="result-success">
+                  {compareResult.success ? '✅ 成功' : '❌ 失败'}
+                </span>
+              </div>
               <pre>{JSON.stringify(compareResult, null, 2)}</pre>
             </div>
           )}
