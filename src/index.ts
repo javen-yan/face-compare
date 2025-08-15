@@ -38,6 +38,3 @@ export type {
   UseAutoFaceCompareOptions,
   UseAutoFaceCompareReturn
 } from './hooks/useAutoFaceCompare';
-
-// 默认导出核心类
-export { FaceCompare as default } from './FaceCompare';

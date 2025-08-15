@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { CameraModalProps } from '../types';
 
 const CameraModal: React.FC<CameraModalProps> = ({
@@ -28,22 +28,23 @@ const CameraModal: React.FC<CameraModalProps> = ({
   const startCameraRef = useRef<() => Promise<void>>();
   const stopCameraRef = useRef<() => void>();
 
-  // 默认配置
-  const defaultConfig = {
-    width: 640,
-    height: 480,
-    facingMode: 'user' as const,
-    aspectRatio: 4/3,
-    quality: 0.8,
-    showPreview: true,
-    showControls: true,
-    maxFileSize: 10
-  };
+  // 使用 useMemo 优化配置对象，避免不必要的重新创建
+  const finalConfig = useMemo(() => {
+    const defaultConfig = {
+      width: 640,
+      height: 480,
+      facingMode: 'user' as const,
+      aspectRatio: 4/3,
+      quality: 0.8,
+      showPreview: true,
+      showControls: true,
+      maxFileSize: 10
+    };
+    return { ...defaultConfig, ...config };
+  }, [config]);
 
-  const finalConfig = { ...defaultConfig, ...config };
-
-  // 语言配置
-  const language = {
+  // 使用 useMemo 优化语言配置
+  const language = useMemo(() => ({
     title: '拍照采集',
     capture: '拍照',
     retake: '重拍',
@@ -57,8 +58,11 @@ const CameraModal: React.FC<CameraModalProps> = ({
     switchCamera: '切换摄像头',
     autoCapture: '自动抓拍',
     faceDetected: '检测到人脸',
-    noFaceDetected: '未检测到人脸'
-  };
+    noFaceDetected: '未检测到人脸',
+    retry: '重试',
+    capturing: '拍照中...',
+    preview: '预览'
+  }), []);
 
   // 获取摄像头设备列表
   useEffect(() => {
@@ -140,6 +144,10 @@ const CameraModal: React.FC<CameraModalProps> = ({
           errorMessage = language.deviceError;
         } else if (error.name === 'NotReadableError') {
           errorMessage = '摄像头被其他应用占用';
+        } else if (error.name === 'OverconstrainedError') {
+          errorMessage = '摄像头配置不兼容';
+        } else if (error.name === 'TypeError') {
+          errorMessage = '摄像头参数错误';
         }
       }
       
@@ -242,9 +250,22 @@ const CameraModal: React.FC<CameraModalProps> = ({
     } finally {
       setIsCapturing(false);
     }
-  }, [finalConfig, language, isCapturing, stream, onCapture]);
+  }, [finalConfig, language, isCapturing, onCapture]);
 
-  // 人脸检测函数
+  // 处理自动拍照完成后的逻辑
+  const handleAutoCaptureComplete = useCallback((imageData: string) => {
+    setCapturedImage(imageData);
+    setError(null);
+    setFaceDetected(false);
+    onCapture(imageData);
+    
+    // 自动拍照完成后延迟关闭弹窗
+    setTimeout(() => {
+      onClose();
+    }, 2000); // 2秒后自动关闭，给用户预览时间
+  }, [onCapture, onClose]);
+
+  // 优化的人脸检测函数
   const detectFace = useCallback(() => {
     if (!videoRef.current || !canvasRef.current || !isCameraReady) {
       return;
@@ -268,38 +289,58 @@ const CameraModal: React.FC<CameraModalProps> = ({
       const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
 
-      // 简单的人脸检测：检测肤色区域
+      // 优化的人脸检测：检测肤色区域
       let skinPixels = 0;
       let totalPixels = data.length / 4;
+      const sampleStep = 4; // 采样步长，提高性能
 
-      for (let i = 0; i < data.length; i += 4) {
+      for (let i = 0; i < data.length; i += sampleStep * 4) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
 
-        // 简单的肤色检测算法
+        // 改进的肤色检测算法
         if (r > 95 && g > 40 && b > 20 && 
             Math.max(r, g, b) - Math.min(r, g, b) > 15 &&
-            Math.abs(r - g) > 15 && r > g && r > b) {
+            Math.abs(r - g) > 15 && r > g && r > b &&
+            r + g + b > 100) { // 添加亮度检查
           skinPixels++;
         }
       }
 
-      const skinRatio = skinPixels / totalPixels;
-      const hasFace = skinRatio > 0.1; // 如果肤色像素超过10%，认为有人脸
+      const skinRatio = skinPixels / (totalPixels / sampleStep);
+      const hasFace = skinRatio > 0.08; // 调整阈值
 
       setFaceDetected(hasFace);
 
       // 如果启用了自动抓拍且检测到人脸，自动拍照
       if (autoCaptureEnabled && hasFace && !isCapturing && !capturedImage) {
         setTimeout(() => {
-          capturePhoto();
+          // 自动拍照时使用专门的处理函数
+          if (videoRef.current && canvasRef.current) {
+            try {
+              const video = videoRef.current;
+              const canvas = canvasRef.current;
+              const context = canvas.getContext('2d');
+
+              if (context && video.videoWidth > 0 && video.videoHeight > 0) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                const imageData = canvas.toDataURL('image/jpeg', finalConfig.quality);
+                handleAutoCaptureComplete(imageData);
+              }
+            } catch (error) {
+              console.error('自动拍照失败:', error);
+            }
+          }
         }, 1000); // 延迟1秒自动拍照
       }
     } catch (error) {
       console.error('人脸检测失败:', error);
     }
-  }, [isCameraReady, autoCaptureEnabled, isCapturing, capturedImage, capturePhoto]);
+  }, [isCameraReady, autoCaptureEnabled, isCapturing, capturedImage, finalConfig.quality, handleAutoCaptureComplete]);
 
   // 启动人脸检测
   useEffect(() => {
@@ -371,6 +412,492 @@ const CameraModal: React.FC<CameraModalProps> = ({
     };
   }, []);
 
+  // 使用 useMemo 优化样式，避免每次渲染都重新创建
+  const styles = useMemo(() => `
+    .camera-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      background-color: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(4px);
+    }
+    
+    .camera-modal {
+      background-color: #ffffff;
+      border-radius: 16px;
+      padding: 0;
+      max-width: 90vw;
+      max-height: 90vh;
+      overflow: hidden;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+      animation: modalSlideIn 0.3s ease-out;
+    }
+    
+    @keyframes modalSlideIn {
+      from {
+        opacity: 0;
+        transform: scale(0.9) translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+    
+    .camera-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 24px;
+      border-bottom: 1px solid #e9ecef;
+      background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    }
+    
+    .camera-modal-header h3 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 600;
+      color: #2c3e50;
+      background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .close-button {
+      background: none;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      padding: 0;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+      color: #666666;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .close-button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border-radius: 50%;
+      transform: scale(0);
+      transition: transform 0.3s ease;
+    }
+    
+    .close-button:hover::before {
+      transform: scale(1);
+    }
+    
+    .close-button:hover {
+      color: #dc3545;
+      transform: rotate(90deg);
+    }
+    
+    .camera-modal-content {
+      padding: 24px;
+    }
+    
+    .camera-container {
+      position: relative;
+      margin-bottom: 24px;
+      min-height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    
+    .camera-video {
+      width: 100%;
+      max-width: ${finalConfig.width}px;
+      height: auto;
+      border-radius: 8px;
+      display: block;
+      opacity: ${isCameraReady ? 1 : 0.7};
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      filter: ${isCameraReady ? 'none' : 'grayscale(0.3)'};
+    }
+    
+    .camera-frame {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .frame-circle {
+      width: 300px;
+      height: 300px;
+      border: 4px solid #007bff;
+      border-radius: 50%;
+      box-shadow: 0 0 30px rgba(0, 123, 255, 0.6);
+      opacity: 0.6;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        box-shadow: 0 0 30px rgba(0, 123, 255, 0.6);
+      }
+      50% {
+        box-shadow: 0 0 40px rgba(0, 123, 255, 0.8);
+      }
+    }
+    
+    .face-detection-indicator {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 25px;
+      font-size: 13px;
+      font-weight: 500;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    
+    .indicator-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+    
+    .indicator-dot.detected {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      box-shadow: 0 0 12px rgba(40, 167, 69, 0.8);
+      animation: bounce 0.6s ease-in-out;
+    }
+    
+    .indicator-dot.not-detected {
+      background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+      box-shadow: 0 0 12px rgba(220, 53, 69, 0.8);
+    }
+    
+    @keyframes bounce {
+      0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+      }
+      40% {
+        transform: translateY(-8px);
+      }
+      60% {
+        transform: translateY(-4px);
+      }
+    }
+    
+    .camera-error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+      color: white;
+      padding: 24px;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 12px 32px rgba(220, 53, 69, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .camera-error button {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 12px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+    
+    .camera-error button:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: translateY(-2px);
+    }
+    
+    .camera-loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
+      color: white;
+      padding: 24px;
+      border-radius: 12px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .camera-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      align-items: center;
+    }
+    
+    .auto-capture-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: #495057;
+      font-weight: 500;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+    }
+    
+    .auto-capture-toggle input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #007bff;
+    }
+    
+    .control-button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      min-width: 120px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .control-button::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.5s ease;
+    }
+    
+    .control-button:hover::before {
+      left: 100%;
+    }
+    
+    .control-button.secondary {
+      background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+    }
+    
+    .control-button.primary {
+      background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+    }
+    
+    .control-button:hover:not(:disabled) {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    }
+    
+    .control-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .capture-button {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+      padding: 18px 36px;
+      border: none;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+      min-width: 140px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .capture-button::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      transition: all 0.6s ease;
+    }
+    
+    .capture-button:hover::before {
+      width: 300px;
+      height: 300px;
+    }
+    
+    .capture-button:hover:not(:disabled) {
+      background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+      transform: translateY(-3px) scale(1.05);
+      box-shadow: 0 10px 30px rgba(40, 167, 69, 0.5);
+    }
+    
+    .capture-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .capture-preview {
+      text-align: center;
+      animation: fadeIn 0.4s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .preview-image {
+      max-width: 100%;
+      max-height: 450px;
+      border-radius: 12px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+      margin-bottom: 24px;
+      border: 3px solid #ffffff;
+      transition: all 0.3s ease;
+    }
+    
+    .preview-image:hover {
+      transform: scale(1.02);
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
+    }
+    
+    .preview-controls {
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+    }
+    
+    /* 响应式设计 */
+    @media (max-width: 768px) {
+      .camera-modal {
+        max-width: 95vw;
+        max-height: 95vh;
+        border-radius: 12px;
+      }
+      
+      .camera-modal-content {
+        padding: 18px;
+      }
+      
+      .camera-modal-header {
+        padding: 18px;
+      }
+      
+      .camera-modal-header h3 {
+        font-size: 20px;
+      }
+      
+      .frame-circle {
+        width: 250px;
+        height: 250px;
+      }
+      
+      .capture-button {
+        padding: 15px 30px;
+        font-size: 15px;
+        min-width: 120px;
+      }
+      
+      .preview-controls {
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      .control-button {
+        width: 100%;
+        max-width: 220px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .camera-modal {
+        border-radius: 10px;
+        margin: 10px;
+      }
+      
+      .camera-modal-content {
+        padding: 15px;
+      }
+      
+      .camera-modal-header {
+        padding: 15px;
+      }
+      
+      .frame-circle {
+        width: 200px;
+        height: 200px;
+      }
+      
+      .face-detection-indicator {
+        top: 15px;
+        left: 15px;
+        font-size: 12px;
+        padding: 8px 12px;
+      }
+      
+      .capture-button {
+        padding: 14px 28px;
+        font-size: 14px;
+        min-width: 110px;
+      }
+    }
+  `, [finalConfig.width]);
+
   if (!isOpen) return null;
 
   return (
@@ -413,7 +940,7 @@ const CameraModal: React.FC<CameraModalProps> = ({
                 {error && (
                   <div className="camera-error">
                     <p>{error}</p>
-                    <button onClick={() => startCameraRef.current?.()}>重试</button>
+                    <button onClick={() => startCameraRef.current?.()}>{language.retry}</button>
                   </div>
                 )}
 
@@ -454,7 +981,7 @@ const CameraModal: React.FC<CameraModalProps> = ({
                   onClick={capturePhoto}
                   disabled={!isCameraReady || isCapturing}
                 >
-                  {isCapturing ? '拍照中...' : language.capture}
+                  {isCapturing ? language.capturing : language.capture}
                 </button>
               </div>
             </>
@@ -462,7 +989,7 @@ const CameraModal: React.FC<CameraModalProps> = ({
             <div className="capture-preview">
               <img 
                 src={capturedImage} 
-                alt="预览" 
+                alt={language.preview} 
                 className="preview-image"
               />
               
@@ -485,337 +1012,7 @@ const CameraModal: React.FC<CameraModalProps> = ({
           )}
         </div>
         
-        <style>{`
-          .camera-modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            background-color: rgba(0, 0, 0, 0.8);
-          }
-          
-          .camera-modal {
-            background-color: #ffffff;
-            border-radius: 12px;
-            padding: 0;
-            max-width: 90vw;
-            max-height: 90vh;
-            overflow: hidden;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-          }
-          
-          .camera-modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 20px;
-            border-bottom: 1px solid #e9ecef;
-          }
-          
-          .camera-modal-header h3 {
-            margin: 0;
-            font-size: 20px;
-            font-weight: 600;
-            color: #333333;
-          }
-          
-          .close-button {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            padding: 0;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            transition: background-color 0.2s;
-            color: #666666;
-          }
-          
-          .close-button:hover {
-            background-color: #f8f9fa;
-          }
-          
-          .camera-modal-content {
-            padding: 20px;
-          }
-          
-          .camera-container {
-            position: relative;
-            margin-bottom: 20px;
-            min-height: 300px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          
-          .camera-video {
-            width: 100%;
-            max-width: ${finalConfig.width}px;
-            height: auto;
-            border-radius: 8px;
-            display: block;
-            opacity: ${isCameraReady ? 1 : 0.7};
-            transition: opacity 0.3s ease-in-out;
-          }
-          
-          .camera-frame {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            pointer-events: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          
-          .frame-circle {
-            width: 280px;
-            height: 280px;
-            border: 3px solid #007bff;
-            border-radius: 50%;
-            box-shadow: 0 0 20px rgba(0, 123, 255, 0.5);
-            opacity: 0.5;
-          }
-          
-          .face-detection-indicator {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-          }
-          
-          .indicator-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            transition: background-color 0.3s;
-          }
-          
-          .indicator-dot.detected {
-            background-color: #28a745;
-            box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
-          }
-          
-          .indicator-dot.not-detected {
-            background-color: #dc3545;
-            box-shadow: 0 0 8px rgba(220, 53, 69, 0.6);
-          }
-          
-          .camera-error {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: #dc3545;
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-          }
-          
-          .camera-error button {
-            background: rgba(255, 255, 255, 0.2);
-            border: none;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-top: 10px;
-          }
-          
-          .camera-loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-          }
-          
-          .camera-controls {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            align-items: center;
-          }
-          
-          .auto-capture-toggle {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-            color: #666666;
-          }
-          
-          .auto-capture-toggle input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-          }
-          
-          .control-button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-          }
-          
-          .control-button.secondary {
-            background-color: #6c757d;
-            color: white;
-          }
-          
-          .control-button.primary {
-            background-color: #007bff;
-            color: white;
-          }
-          
-          .control-button:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-          }
-          
-          .control-button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-          }
-          
-          .capture-button {
-            background-color: #28a745;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 50px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
-            min-width: 120px;
-          }
-          
-          .capture-button:hover:not(:disabled) {
-            background-color: #218838;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
-          }
-          
-          .capture-button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-          }
-          
-          .capture-preview {
-            text-align: center;
-          }
-          
-          .preview-image {
-            max-width: 100%;
-            max-height: 400px;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-          }
-          
-          .preview-controls {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-          }
-          
-          /* 响应式设计 */
-          @media (max-width: 768px) {
-            .camera-modal {
-              max-width: 95vw;
-              max-height: 95vh;
-            }
-            
-            .camera-modal-content {
-              padding: 15px;
-            }
-            
-            .camera-modal-header {
-              padding: 15px;
-            }
-            
-            .camera-modal-header h3 {
-              font-size: 18px;
-            }
-            
-            .frame-circle {
-              width: 220px;
-              height: 220px;
-            }
-            
-            .capture-button {
-              padding: 12px 24px;
-              font-size: 14px;
-              min-width: 100px;
-            }
-            
-            .preview-controls {
-              flex-direction: column;
-              align-items: center;
-            }
-            
-            .control-button {
-              width: 100%;
-              max-width: 200px;
-            }
-          }
-          
-          @media (max-width: 480px) {
-            .camera-modal {
-              border-radius: 8px;
-            }
-            
-            .camera-modal-content {
-              padding: 10px;
-            }
-            
-            .camera-modal-header {
-              padding: 10px;
-            }
-            
-            .frame-circle {
-              width: 180px;
-              height: 180px;
-            }
-            
-            .face-detection-indicator {
-              top: 10px;
-              left: 10px;
-              font-size: 11px;
-              padding: 6px 10px;
-            }
-          }
-        `}
-        </style>
+        <style>{styles}</style>
       </div>
     </div>
   );
