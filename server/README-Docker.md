@@ -89,7 +89,6 @@ environment:
   - SERVER_PORT=3001          # 服务端口
   - SERVER_HOST=0.0.0.0      # 服务主机
   - SERVER_LOG_LEVEL=info     # 日志级别
-  - SERVER_MODEL_PATH=        # 模型文件路径
 ```
 
 ## 故障排除

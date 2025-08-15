@@ -33,7 +33,6 @@ RUN apt-get update && apt-get install -y \
     gfortran \
     wget \
     g++ \
-    cmake \
     curl \
     unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -42,12 +41,16 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # 创建模型目录
-RUN mkdir -p /root/.insightface/models/buffalo_l/
+RUN mkdir -p /root/.insightface/models
+
+# 创建模型目录
+RUN mkdir -p /root/.insightface/models/buffalo_l
 
 # 下载模型
-RUN wget -O /tmp/buffalo_l.zip https://ghfast.top/https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
-RUN unzip /tmp/buffalo_l.zip -d /root/.insightface/models/buffalo_l/
-RUN rm /tmp/buffalo_l.zip
+RUN wget -O /root/.insightface/models/buffalo_l.zip https://ghfast.top/https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+
+# 解压模型
+RUN unzip /root/.insightface/models/buffalo_l.zip -d /root/.insightface/models/buffalo_l
 
 # 安装Python依赖
 RUN pip install --no-cache-dir --upgrade pip -i https://mirrors.aliyun.com/pypi/simple && \

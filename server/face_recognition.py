@@ -20,6 +20,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+data_path = os.path.join(os.path.dirname(__file__), 'data')
+
 class InsightFaceRecognition:
     def __init__(self, model_path: str = None):
         """
@@ -49,8 +51,8 @@ class InsightFaceRecognition:
     def load_user_data(self):
         """加载已保存的用户数据"""
         try:
-            if os.path.exists('user_data.pkl'):
-                with open('user_data.pkl', 'rb') as f:
+            if os.path.exists(os.path.join(data_path, 'user_data.pkl')):
+                with open(os.path.join(data_path, 'user_data.pkl'), 'rb') as f:
                     data = pickle.load(f)
                     self.user_embeddings = data.get('embeddings', {})
                     self.user_faces = data.get('faces', {})
@@ -65,7 +67,7 @@ class InsightFaceRecognition:
                 'embeddings': self.user_embeddings,
                 'faces': self.user_faces
             }
-            with open('user_data.pkl', 'wb') as f:
+            with open(os.path.join(data_path, 'user_data.pkl'), 'wb') as f:
                 pickle.dump(data, f)
             logger.info("用户数据保存成功")
         except Exception as e:

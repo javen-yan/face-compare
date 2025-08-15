@@ -332,6 +332,6 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host=SERVER_HOST,
-        port=SERVER_PORT,
+        port=int(SERVER_PORT),
         log_level="info"
     ) 
