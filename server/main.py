@@ -15,13 +15,18 @@ import sys
 from datetime import datetime
 from contextlib import asynccontextmanager
 
+SERVER_PORT = os.getenv("SERVER_PORT", 3001)
+SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+SERVER_LOG_LEVEL = os.getenv("SERVER_LOG_LEVEL", "info")
+SERVER_MODEL_PATH = os.getenv("SERVER_MODEL_PATH", None)
+
 # 添加当前目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from face_recognition import InsightFaceRecognition
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=SERVER_LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 # 全局人脸识别实例
@@ -54,7 +59,7 @@ async def lifespan(app: FastAPI):
     global face_recognition
     try:
         logger.info("正在初始化 InsightFace 人脸识别系统...")
-        face_recognition = InsightFaceRecognition()
+        face_recognition = InsightFaceRecognition(model_path=SERVER_MODEL_PATH)
         logger.info("InsightFace 初始化成功！")
         yield
     finally:
@@ -327,7 +332,7 @@ if __name__ == "__main__":
     
     uvicorn.run(
         app,
-        host="0.0.0.0",
-        port=3001,
+        host=SERVER_HOST,
+        port=SERVER_PORT,
         log_level="info"
     ) 
