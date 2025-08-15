@@ -10,25 +10,30 @@ ENV PYTHONUNBUFFERED=1
 ENV SERVER_PORT=3001
 ENV SERVER_HOST=0.0.0.0
 ENV SERVER_LOG_LEVEL=info
-ENV SERVER_MODEL_PATH=model/insightface/
+
+# 把默认源替换为清华源（兼容新版本Debian）
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list 2>/dev/null || \
+    echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main" > /etc/apt/sources.list.d/debian.list
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     libgomp1 \
     libgcc-s1 \
     libstdc++6 \
     libgfortran5 \
     libquadmath0 \
-    libopenblas64-pthread \
-    liblapack64 \
-    libatlas-base-dev \
+    libopenblas0-pthread \
+    liblapack3 \
     gfortran \
     wget \
+    g++ \
+    cmake \
     curl \
     unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -37,12 +42,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # 创建模型目录
-RUN mkdir -p /app/model/insightface/
+RUN mkdir -p /root/.insightface/models/buffalo_l/
 
 # 下载模型
-RUN curl -L -o /app/model/insightface/buffalo_l.zip https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
-RUN unzip /app/model/insightface/buffalo_l.zip -d /app/model/insightface/
-RUN rm /app/model/insightface/buffalo_l.zip
+RUN wget -O /tmp/buffalo_l.zip https://ghfast.top/https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+RUN unzip /tmp/buffalo_l.zip -d /root/.insightface/models/buffalo_l/
+RUN rm /tmp/buffalo_l.zip
 
 # 安装Python依赖
 RUN pip install --no-cache-dir --upgrade pip -i https://mirrors.aliyun.com/pypi/simple && \

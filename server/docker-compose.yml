@@ -12,7 +12,6 @@ services:
       - SERVER_PORT=3001
       - SERVER_HOST=0.0.0.0
       - SERVER_LOG_LEVEL=info
-      - SERVER_MODEL_PATH=model/insightface/
     volumes:
       - ./user_data.pkl:/app/user_data.pkl
     restart: unless-stopped
@@ -22,9 +21,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - face-compare-network
-
-networks:
-  face-compare-network:
-    driver: bridge 

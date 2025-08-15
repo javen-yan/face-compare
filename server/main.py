@@ -18,7 +18,6 @@ from contextlib import asynccontextmanager
 SERVER_PORT = os.getenv("SERVER_PORT", 3001)
 SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 SERVER_LOG_LEVEL = os.getenv("SERVER_LOG_LEVEL", "info")
-SERVER_MODEL_PATH = os.getenv("SERVER_MODEL_PATH", None)
 
 # 添加当前目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -59,7 +58,7 @@ async def lifespan(app: FastAPI):
     global face_recognition
     try:
         logger.info("正在初始化 InsightFace 人脸识别系统...")
-        face_recognition = InsightFaceRecognition(model_path=SERVER_MODEL_PATH)
+        face_recognition = InsightFaceRecognition()
         logger.info("InsightFace 初始化成功！")
         yield
     finally:
