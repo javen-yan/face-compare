@@ -13,6 +13,12 @@
 - 🎨 **高度可定制** - 丰富的配置选项和主题支持
 - 🔧 **TypeScript 支持** - 完整的类型定义和类型安全
 - 🚀 **React Hooks** - 现代化的 React 开发体验
+- 💾 **智能缓存** - 内置缓存管理系统，提升性能
+- 🔄 **重试机制** - 自动重试失败的请求，提高可靠性
+- 📊 **性能监控** - 内置性能指标收集和分析
+- 💾 **智能缓存** - 内置缓存管理系统，提升性能
+- 🔄 **重试机制** - 自动重试失败的请求，提高可靠性
+- 📊 **性能监控** - 内置性能指标收集和分析
 
 ## 📦 安装
 
@@ -34,18 +40,9 @@ function FaceCompareApp() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   const {
-    isCameraOpen,
-    capturedImage,
-    isInitialized,
     isComparing,
-    compareResult,
-    error,
-    record,
-    compare,
-    openCamera,
-    closeCamera,
-    clearImage,
-    modalProps
+    autoCompare,
+    cameraModalProps
   } = useAutoFaceCompare({
     faceCompareConfig: {
       api: 'http://localhost:8000',
@@ -54,89 +51,64 @@ function FaceCompareApp() {
     },
     faceCompareOptions: {
       enableLogging: true,
-      insightFace: {
-        threshold: 0.6,
-        enableBatchCompare: true
-      }
+      enableCache: true,
+      cacheTTL: 300000,
+      retryCount: 3,
+      retryDelay: 1000,
+      timeout: 30000
     },
-    onCapture: (imageData) => console.log('拍照完成:', imageData),
-    onCompareResult: (result) => console.log('对比结果:', result),
-    onError: (error) => console.error('发生错误:', error),
-    autoCloseAfterCapture: true,
-    autoCloseAfterCompare: true
+    cameraConfig: {
+      width: 640,
+      height: 480,
+      quality: 0.8,
+      facingMode: 'user'
+    },
+    onResult: (result) => console.log('操作结果:', result),
+    onError: (error) => console.error('发生错误:', error)
   });
 
-  const handleRecord = async () => {
+  const handleAutoCompare = async () => {
     try {
-      await record(); // 自动打开摄像头并初始化人脸数据
-      console.log('人脸数据初始化成功');
+      await autoCompare(); // 自动完成拍照、识别、对比的完整流程
+      console.log('人脸识别流程完成');
     } catch (error) {
-      console.error('初始化失败:', error);
+      console.error('操作失败:', error);
     }
   };
 
-  const handleCompare = async () => {
-    try {
-      const result = await compare(); // 自动打开摄像头并开始对比
-      console.log('对比完成:', result);
-    } catch (error) {
-      console.error('对比失败:', error);
-    }
-  };
+  const modalProps = cameraModalProps();
+  const isModalOpen = modalProps !== null;
 
   return (
     <div className="face-compare-app">
       <h1>人脸识别系统</h1>
       
       <div className="controls">
-        {!isInitialized ? (
-          <button 
-            onClick={handleRecord}
-            disabled={isComparing}
-            className="btn btn-primary"
-          >
-            {isComparing ? '初始化中...' : '初始化人脸数据'}
-          </button>
-        ) : (
-          <button 
-            onClick={handleCompare}
-            disabled={isComparing}
-            className="btn btn-success"
-          >
-            {isComparing ? '对比中...' : '开始人脸对比'}
-          </button>
-        )}
-        
         <button 
-          onClick={openCamera}
-          className="btn btn-secondary"
+          onClick={handleAutoCompare}
+          disabled={isComparing}
+          className="btn btn-primary"
         >
-          手动打开摄像头
+          {isComparing ? '处理中...' : '开始人脸识别'}
         </button>
-        
-        <button 
-          onClick={clearImage}
-          className="btn btn-warning"
-        >
-          清除图片
-        </button>
-      </div>
-
-      {/* 状态显示 */}
-      <div className="status">
-        <p>摄像头状态: {isCameraOpen ? '已打开' : '已关闭'}</p>
-        <p>初始化状态: {isInitialized ? '已完成' : '未完成'}</p>
-        {error && <p className="error">错误: {error.message}</p>}
-        {compareResult && (
-          <div className="result">
-            <h3>对比结果:</h3>
-            <pre>{JSON.stringify(compareResult, null, 2)}</pre>
-          </div>
-        )}
       </div>
 
       {/* 摄像头模态框 */}
-      <CameraModal {...modalProps} />
+      {modalProps && (
+        <CameraModal 
+          {...modalProps}
+          title="人脸识别"
+          config={{
+            width: 640,
+            height: 480,
+            quality: 0.8,
+            facingMode: 'user',
+            showPreview: true,
+            showControls: true,
+            autoCapture: true
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -161,11 +133,11 @@ const faceCompare = new FaceCompare(
     retryCount: 3,
     retryDelay: 1000,
     enableLogging: true,
+    enableCache: true,
+    cacheTTL: 300000,
     insightFace: {
       threshold: 0.6,
-      enableBatchCompare: true,
-      enableUserManagement: true,
-      enableSystemMonitoring: true
+      enableBatchCompare: true
     }
   },
   {
@@ -175,7 +147,12 @@ const faceCompare = new FaceCompare(
     onCompareStart: () => console.log('开始对比...'),
     onCompareSuccess: (result) => console.log('对比成功:', result),
     onCompareError: (error) => console.error('对比失败:', error),
-    onError: (error) => console.error('发生错误:', error)
+    onBatchCompareStart: () => console.log('开始批量对比...'),
+    onBatchCompareSuccess: (results) => console.log('批量对比成功:', results),
+    onBatchCompareError: (error) => console.error('批量对比失败:', error),
+    onError: (error) => console.error('发生错误:', error),
+    onCacheHit: (key) => console.log('缓存命中:', key),
+    onCacheMiss: (key) => console.log('缓存未命中:', key)
   }
 );
 
@@ -197,21 +174,28 @@ const systemInfo = await faceCompare.getSystemInfo();
 
 // 获取用户信息
 const userInfo = await faceCompare.getUserInfo();
+
+// 获取性能指标
+const metrics = faceCompare.getPerformanceMetrics();
+
+// 清理资源
+faceCompare.destroy();
 ```
 
 ## 🎯 核心功能
 
-### 1. 自动人脸识别流程
+### 1. 智能人脸识别流程
 
-- **一键初始化**: `record()` 方法自动打开摄像头、拍照、初始化人脸数据
-- **一键对比**: `compare()` 方法自动打开摄像头、拍照、进行人脸对比
-- **智能管理**: 自动管理摄像头状态，支持配置自动关闭
+- **一键操作**: `autoCompare()` 方法自动完成拍照、识别、对比的完整流程
+- **智能判断**: 自动判断用户是否需要录制人脸还是进行人脸对比
+- **状态管理**: 完整的摄像头状态管理和错误处理
 
 ### 2. 摄像头管理
 
 - **自动控制**: 根据操作自动打开/关闭摄像头
+- **设备选择**: 支持多摄像头设备切换
+- **人脸检测**: 内置人脸检测功能，支持自动抓拍
 - **配置灵活**: 支持分辨率、质量、前后摄像头等配置
-- **状态同步**: 实时同步摄像头状态，提供完整的控制接口
 
 ### 3. 人脸识别引擎
 
@@ -219,6 +203,13 @@ const userInfo = await faceCompare.getUserInfo();
 - **可配置阈值**: 支持自定义相似度阈值
 - **批量处理**: 支持多张图片的批量对比
 - **错误处理**: 完善的错误处理和重试机制
+
+### 4. 性能优化
+
+- **智能缓存**: 内置缓存管理系统，提升响应速度
+- **重试机制**: 自动重试失败的请求，提高可靠性
+- **性能监控**: 内置性能指标收集和分析
+- **资源管理**: 自动管理 AbortController 和资源清理
 
 ## 🔧 API 参考
 
@@ -230,18 +221,17 @@ const userInfo = await faceCompare.getUserInfo();
 interface UseAutoFaceCompareOptions {
   faceCompareConfig: FaceCompareConfig;        // 人脸识别配置
   faceCompareOptions?: FaceCompareOptions;     // 可选配置
-  onCapture?: (imageData: string) => void;     // 拍照回调
-  onFaceDetected?: (imageData: string) => void; // 人脸检测回调
-  onCompareResult?: (result: any) => void;     // 对比结果回调
+  onResult?: (result: CompareResult) => void;  // 结果回调
   onError?: (error: Error) => void;            // 错误回调
-  autoCloseAfterCapture?: boolean;             // 拍照后自动关闭
-  autoCloseAfterCompare?: boolean;             // 对比后自动关闭
   cameraConfig?: {                             // 摄像头配置
     width?: number;
     height?: number;
     quality?: number;
     facingMode?: 'user' | 'environment';
   };
+  retryCount?: number;                         // 重试次数
+  retryDelay?: number;                         // 重试延迟
+  enableLogging?: boolean;                     // 启用日志
 }
 ```
 
@@ -249,33 +239,13 @@ interface UseAutoFaceCompareOptions {
 
 ```typescript
 interface UseAutoFaceCompareReturn {
-  // 摄像头状态
-  isCameraOpen: boolean;           // 摄像头是否打开
-  capturedImage: string | null;    // 拍摄的图片
-  clearImage: () => void;          // 清除图片
+  // 状态管理
+  isComparing: boolean;                        // 是否正在处理
+  step: 'init' | 'compare';                   // 当前步骤
   
-  // 人脸识别状态
-  isInitialized: boolean;          // 是否已初始化
-  isComparing: boolean;            // 是否正在对比
-  compareResult: any;              // 对比结果
-  error: Error | null;             // 错误信息
-  
-  // 自动管理方法
-  record: () => Promise<void>;     // 自动初始化
-  compare: () => Promise<any>;     // 自动对比
-  compareBatch: (imageDataList?: string[]) => Promise<any[]>; // 批量对比
-  
-  // 手动控制
-  openCamera: () => void;          // 打开摄像头
-  closeCamera: () => void;         // 关闭摄像头
-  
-  // 模态框属性
-  modalProps: {                    // 摄像头模态框属性
-    isOpen: boolean;
-    onClose: () => void;
-    onCapture: (imageData: string) => void;
-    config?: any;
-  };
+  // 核心方法
+  autoCompare: () => Promise<void>;            // 自动人脸识别
+  cameraModalProps: () => CameraModalProps | null; // 摄像头模态框属性
 }
 ```
 
@@ -288,6 +258,8 @@ interface UseAutoFaceCompareReturn {
 - `compareBatch(imageDataList: string[])`: 批量对比
 - `getSystemInfo()`: 获取系统信息
 - `getUserInfo()`: 获取用户信息
+- `getPerformanceMetrics()`: 获取性能指标
+- `destroy()`: 清理资源
 
 #### 事件回调
 
@@ -297,7 +269,12 @@ interface UseAutoFaceCompareReturn {
 - `onCompareStart`: 对比开始
 - `onCompareSuccess`: 对比成功
 - `onCompareError`: 对比失败
+- `onBatchCompareStart`: 批量对比开始
+- `onBatchCompareSuccess`: 批量对比成功
+- `onBatchCompareError`: 批量对比失败
 - `onError`: 通用错误
+- `onCacheHit`: 缓存命中
+- `onCacheMiss`: 缓存未命中
 
 ### CameraModal 组件
 
@@ -320,8 +297,7 @@ interface CameraModalConfig {
   quality?: number;                   // 图片质量
   showPreview?: boolean;              // 显示预览
   showControls?: boolean;             // 显示控制按钮
-  theme?: 'light' | 'dark' | 'auto'; // 主题
-  language?: 'zh-CN' | 'en-US';      // 语言
+  autoCapture?: boolean;              // 自动抓拍
   maxFileSize?: number;               // 最大文件大小
 }
 ```
@@ -334,10 +310,9 @@ interface CameraModalConfig {
 <CameraModal
   {...modalProps}
   config={{
-    theme: 'dark',
-    language: 'zh-CN',
     showPreview: true,
-    showControls: true
+    showControls: true,
+    autoCapture: true
   }}
 />
 ```
@@ -408,6 +383,18 @@ REACT_APP_FACE_COMPARE_AUTH=your-api-key
 
 ## 🚀 性能优化
 
+### 缓存配置
+
+```typescript
+const options = {
+  enableCache: true,           // 启用缓存
+  cacheTTL: 300000,           // 缓存过期时间 (5分钟)
+  retryCount: 3,              // 重试次数
+  retryDelay: 1000,           // 重试延迟
+  timeout: 30000              // 请求超时
+};
+```
+
 ### 图片质量配置
 
 ```typescript
@@ -423,7 +410,7 @@ const cameraConfig = {
 
 ```typescript
 // 使用批量对比提高效率
-const results = await compareBatch([
+const results = await faceCompare.compareBatch([
   image1, image2, image3, image4, image5
 ]);
 ```
@@ -452,6 +439,33 @@ npm run build:types
 
 # 开发模式构建
 npm run dev
+
+# 清理构建文件
+npm run clean
+```
+
+## 🔍 调试和监控
+
+### 启用日志
+
+```typescript
+const options = {
+  enableLogging: true,  // 启用详细日志
+  enableCache: true,    // 启用缓存
+  cacheTTL: 300000      // 缓存过期时间
+};
+```
+
+### 性能监控
+
+```typescript
+// 获取性能指标
+const metrics = faceCompare.getPerformanceMetrics();
+console.log('总请求数:', metrics.totalRequests);
+console.log('成功请求数:', metrics.successfulRequests);
+console.log('失败请求数:', metrics.failedRequests);
+console.log('缓存命中率:', metrics.cacheHits / (metrics.cacheHits + metrics.cacheMisses));
+console.log('平均响应时间:', metrics.averageResponseTime);
 ```
 
 ## 🤝 贡献
