@@ -172,7 +172,6 @@ export class FaceCompare extends EventEmitter {
   private api: string;
   private auth?: string;
   private userId?: string;
-  private faceData?: string;
   private options: Required<FaceCompareOptions>;
   private eventCallbacks: FaceCompareEvents;
   private insightFaceConfig: InsightFaceConfig;
@@ -280,7 +279,6 @@ export class FaceCompare extends EventEmitter {
 
           if (response.success && response.data) {
             this.userId = response.data.userId;
-            this.faceData = response.data.faceData;
 
             // 缓存结果
             if (this.options.enableCache) {
@@ -628,7 +626,7 @@ export class FaceCompare extends EventEmitter {
    * @returns boolean
    */
   isInitialized(): boolean {
-    return !!(this.userId && this.faceData);
+    return !!(this.userId);
   }
 
   /**
@@ -639,7 +637,6 @@ export class FaceCompare extends EventEmitter {
     return {
       isInitialized: this.isInitialized(),
       userId: this.userId,
-      hasFaceData: !!this.faceData,
       apiEndpoint: this.api,
       options: this.options,
       insightFaceConfig: this.insightFaceConfig,
@@ -669,7 +666,6 @@ export class FaceCompare extends EventEmitter {
    */
   clear(): void {
     this.userId = undefined;
-    this.faceData = undefined;
     this.cacheManager.clear();
     this.log('用户数据和缓存已清除');
   }

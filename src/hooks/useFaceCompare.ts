@@ -30,8 +30,7 @@ export interface UseFaceCompareState {
   isInitialized: boolean;
   status: {
     isInitialized: boolean;
-    userId: string | undefined;
-    hasFaceData: boolean;
+    userId: string | undefined; 
     apiEndpoint: string;
     options: Required<FaceCompareOptions>;
     insightFaceConfig: any;
@@ -76,7 +75,6 @@ export const useFaceCompare = (
     status: {
       isInitialized: false,
       userId: undefined,
-      hasFaceData: false,
       apiEndpoint: stableConfig.api,
       options: stableOptions,
       insightFaceConfig: {}

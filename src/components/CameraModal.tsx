@@ -5,6 +5,7 @@ const CameraModal: React.FC<CameraModalProps> = ({
   isOpen,
   onClose,
   onCapture,
+  title = '拍照采集',
   config = {}
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -27,6 +28,9 @@ const CameraModal: React.FC<CameraModalProps> = ({
   // 使用 useRef 存储函数引用，避免依赖项问题
   const startCameraRef = useRef<() => Promise<void>>();
   const stopCameraRef = useRef<() => void>();
+  
+  // 使用 AbortController 来管理异步操作
+  const abortControllerRef = useRef<AbortController>();
 
   // 使用 useMemo 优化配置对象，避免不必要的重新创建
   const finalConfig = useMemo(() => {
@@ -45,7 +49,6 @@ const CameraModal: React.FC<CameraModalProps> = ({
 
   // 使用 useMemo 优化语言配置
   const language = useMemo(() => ({
-    title: '拍照采集',
     capture: '拍照',
     retake: '重拍',
     confirm: '确认',
@@ -106,6 +109,10 @@ const CameraModal: React.FC<CameraModalProps> = ({
       setError(null);
       setIsCameraReady(false);
       
+      // 创建新的 AbortController
+      abortControllerRef.current = new AbortController();
+      const { signal } = abortControllerRef.current;
+      
       const constraints = {
         video: {
           width: { ideal: finalConfig.width },
@@ -119,21 +126,44 @@ const CameraModal: React.FC<CameraModalProps> = ({
         (constraints.video as any).deviceId = { exact: selectedDevice };
       }
 
+      // 检查是否已被取消
+      if (signal.aborted) {
+        console.log('启动摄像头操作已被取消');
+        return;
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // 再次检查是否已被取消
+      if (signal.aborted) {
+        console.log('摄像头启动后操作已被取消，停止流');
+        mediaStream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      
       setStream(mediaStream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.onloadedmetadata = () => {
-          setIsCameraReady(true);
-          setError(null);
+          if (!signal.aborted) {
+            setIsCameraReady(true);
+            setError(null);
+          }
         };
         videoRef.current.onerror = () => {
-          setError('视频加载失败');
-          setIsCameraReady(false);
+          if (!signal.aborted) {
+            setError('视频加载失败');
+            setIsCameraReady(false);
+          }
         };
       }
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('启动摄像头操作被取消');
+        return;
+      }
+      
       console.error('无法访问摄像头:', error);
       let errorMessage = language.error;
       
@@ -154,7 +184,9 @@ const CameraModal: React.FC<CameraModalProps> = ({
       setError(errorMessage);
       setIsCameraReady(false);
     } finally {
-      setIsStartingCamera(false);
+      if (!abortControllerRef.current?.signal.aborted) {
+        setIsStartingCamera(false);
+      }
     }
   }, [finalConfig, selectedDevice, language, isStartingCamera, stream]);
 
@@ -162,20 +194,62 @@ const CameraModal: React.FC<CameraModalProps> = ({
 
   // 停止摄像头
   const stopCamera = useCallback(() => {
+    console.log('停止摄像头，释放资源...');
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    // 停止所有媒体轨道
     setStream(currentStream => {
       if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
+        currentStream.getTracks().forEach(track => {
+          try {
+            track.stop();
+            console.log('停止媒体轨道:', track.kind, track.label);
+          } catch (error) {
+            console.warn('停止媒体轨道时出错:', error);
+          }
+        });
       }
       return null;
     });
-    setIsCameraReady(false);
-    setIsStartingCamera(false);
     
     // 清除人脸检测定时器
     if (faceDetectionInterval) {
       clearInterval(faceDetectionInterval);
       setFaceDetectionInterval(null);
     }
+    
+    // 清理视频元素
+    if (videoRef.current) {
+      try {
+        videoRef.current.srcObject = null;
+        videoRef.current.pause();
+        videoRef.current.load(); // 强制重新加载，确保资源释放
+      } catch (error) {
+        console.warn('清理视频元素时出错:', error);
+      }
+    }
+    
+    // 清理画布
+    if (canvasRef.current) {
+      try {
+        const context = canvasRef.current.getContext('2d');
+        if (context) {
+          context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
+      } catch (error) {
+        console.warn('清理画布时出错:', error);
+      }
+    }
+
+    // 重置所有相关状态
+    setIsCameraReady(false);
+    setFaceDetected(false);
+    setError(null);
+    setIsStartingCamera(false);
+    
+    console.log('摄像头资源释放完成');
   }, [faceDetectionInterval]);
 
   stopCameraRef.current = stopCamera;
@@ -184,16 +258,22 @@ const CameraModal: React.FC<CameraModalProps> = ({
   const switchCamera = useCallback(async () => {
     if (cameraDevices.length < 2) return;
     
+    console.log('切换摄像头...');
+    
     const currentIndex = cameraDevices.findIndex(device => device.deviceId === selectedDevice);
     const nextIndex = (currentIndex + 1) % cameraDevices.length;
     const nextDevice = cameraDevices[nextIndex];
     
     setSelectedDevice(nextDevice.deviceId);
     
+    // 先停止当前摄像头
     if (stopCameraRef.current) {
       stopCameraRef.current();
     }
+    
+    // 等待资源完全释放后再启动新摄像头
     await new Promise(resolve => setTimeout(resolve, 100));
+    
     if (startCameraRef.current) {
       await startCameraRef.current();
     }
@@ -252,6 +332,17 @@ const CameraModal: React.FC<CameraModalProps> = ({
     }
   }, [finalConfig, language, isCapturing, onCapture]);
 
+  // 确认拍照
+  const confirmPhoto = useCallback(() => {
+    if (stopCameraRef.current) {
+      stopCameraRef.current();
+    }
+
+    setTimeout(() => {
+      onClose();
+    }, 100);
+  }, [onClose]);
+
   // 处理自动拍照完成后的逻辑
   const handleAutoCaptureComplete = useCallback((imageData: string) => {
     setCapturedImage(imageData);
@@ -259,11 +350,8 @@ const CameraModal: React.FC<CameraModalProps> = ({
     setFaceDetected(false);
     onCapture(imageData);
     
-    // 自动拍照完成后延迟关闭弹窗
-    setTimeout(() => {
-      onClose();
-    }, 2000); // 2秒后自动关闭，给用户预览时间
-  }, [onCapture, onClose]);
+    confirmPhoto();
+  }, [onCapture, confirmPhoto]);
 
   // 优化的人脸检测函数
   const detectFace = useCallback(() => {
@@ -356,13 +444,14 @@ const CameraModal: React.FC<CameraModalProps> = ({
 
   // 重拍
   const retakePhoto = useCallback(() => {
+    console.log('重拍，重置状态...');
+    
+    // 重置拍照相关状态
     setCapturedImage(null);
     setError(null);
-    // 重拍时重置人脸检测状态
     setFaceDetected(false);
     
-    // 重拍后重新启动摄像头
-    // 先停止当前摄像头，然后重新启动
+    // 重拍时重新启动摄像头
     if (stopCameraRef.current) {
       stopCameraRef.current();
     }
@@ -372,14 +461,8 @@ const CameraModal: React.FC<CameraModalProps> = ({
       if (startCameraRef.current) {
         startCameraRef.current();
       }
-    }, 100);
+    }, 200); // 增加延迟时间，确保资源完全释放
   }, []);
-
-  // 确认拍照
-  const confirmPhoto = useCallback(() => {
-    // 拍照完成后已经立即调用了onCapture，这里只需要关闭模态框
-    onClose();
-  }, [onClose]);
 
   // 主要的摄像头管理逻辑
   useEffect(() => {
@@ -388,29 +471,15 @@ const CameraModal: React.FC<CameraModalProps> = ({
         if (startCameraRef.current) {
           startCameraRef.current();
         }
-      }, 300);
-      
+      }, 100);
       return () => clearTimeout(timer);
     } else if (!isOpen && stream) {
+      console.log('Modal关闭，停止摄像头...');
       if (stopCameraRef.current) {
         stopCameraRef.current();
       }
-      setCapturedImage(null);
-      setError(null);
-      setHasInitialized(false);
-      // 重置人脸检测状态
-      setFaceDetected(false);
     }
   }, [isOpen, hasInitialized, stream]);
-
-  // 组件卸载时清理资源
-  useEffect(() => {
-    return () => {
-      if (stopCameraRef.current) {
-        stopCameraRef.current();
-      }
-    };
-  }, []);
 
   // 使用 useMemo 优化样式，避免每次渲染都重新创建
   const styles = useMemo(() => `
@@ -473,11 +542,11 @@ const CameraModal: React.FC<CameraModalProps> = ({
     .close-button {
       background: none;
       border: none;
-      font-size: 28px;
+      font-size: 24px;
       cursor: pointer;
+      min-width: 40px;
       padding: 0;
-      width: 36px;
-      height: 36px;
+      height: 40px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -486,28 +555,8 @@ const CameraModal: React.FC<CameraModalProps> = ({
       color: #666666;
       position: relative;
       overflow: hidden;
-    }
-    
-    .close-button::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-      border-radius: 50%;
-      transform: scale(0);
-      transition: transform 0.3s ease;
-    }
-    
-    .close-button:hover::before {
-      transform: scale(1);
-    }
-    
-    .close-button:hover {
-      color: #dc3545;
-      transform: rotate(90deg);
+      line-height: 1;
+      box-sizing: border-box;
     }
     
     .camera-modal-content {
@@ -904,8 +953,8 @@ const CameraModal: React.FC<CameraModalProps> = ({
     <div className="camera-modal-overlay">
       <div className="camera-modal">
         <div className="camera-modal-header">
-          <h3>{language.title}</h3>
-          <button className="close-button" onClick={onClose}>×</button>
+          <h3>{title}</h3>
+          <button className="close-button" onClick={confirmPhoto}>×</button>
         </div>
         
         <div className="camera-modal-content">

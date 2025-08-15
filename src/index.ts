@@ -36,5 +36,6 @@ export type {
 
 export type {
   UseAutoFaceCompareOptions,
-  UseAutoFaceCompareReturn
+  UseAutoFaceCompareReturn,
+  CompareResult
 } from './hooks/useAutoFaceCompare';

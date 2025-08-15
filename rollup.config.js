@@ -28,6 +28,12 @@ module.exports = [
         declarationDir: './dist'
       }),
     ],
-    external: Object.keys(packageJson.peerDependencies || {}),
+    external: [
+      ...Object.keys(packageJson.peerDependencies || {}),
+      ...Object.keys(packageJson.dependencies || {}),
+      'react',
+      'react-dom',
+      'react/jsx-runtime'
+    ],
   }
 ];
